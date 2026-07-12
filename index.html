@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;0,9..144,800;1,9..144,600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
   :root{
     --bg:#0F2E22;
@@ -459,8 +460,8 @@
       <div class="seal-wrap">
         <button class="seal-btn" id="genImgBtn">
           <span class="seal-icon">🖋️</span>
-          Gerar imagem<br>completa
-          <small>salvar resumo em PNG</small>
+          Gerar PDF<br>completo
+          <small>salvar resumo em PDF</small>
         </button>
         <span class="seal-caption">Um retrato completo das suas finanças, pronto para guardar ou compartilhar</span>
       </div>
@@ -955,6 +956,10 @@
 
   function renderCharts(){
     renderTotals();
+    if(typeof Chart === 'undefined'){
+      console.warn('Chart.js não carregou (verifique conexão/bloqueador de anúncios). Pulando gráficos.');
+      return;
+    }
     const ctx1 = document.getElementById('chartCategoria').getContext('2d');
     const byCat = {};
     state.expenses.forEach(x=>{ byCat[x.categoria] = (byCat[x.categoria]||0) + x.valor; });
@@ -1011,6 +1016,12 @@
     btn.innerHTML = 'Gerando...';
     btn.disabled = true;
     try{
+      if(typeof html2canvas === 'undefined'){
+        throw new Error('Biblioteca html2canvas não carregou. Verifique sua conexão com a internet ou desative bloqueadores de anúncio e recarregue a página.');
+      }
+      if(!window.jspdf){
+        throw new Error('Biblioteca jsPDF não carregou. Verifique sua conexão com a internet ou desative bloqueadores de anúncio e recarregue a página.');
+      }
       renderCharts();
       if(document.fonts && document.fonts.ready){ try{ await document.fonts.ready; }catch(e){} }
       await new Promise(r=>setTimeout(r, 300));
@@ -1022,19 +1033,32 @@
         logging:false
       });
       const dataUrl = canvas.toDataURL('image/png');
+
+      const { jsPDF } = window.jspdf;
+      const imgW = canvas.width;
+      const imgH = canvas.height;
+      const pdf = new jsPDF({
+        orientation: imgH > imgW ? 'portrait' : 'landscape',
+        unit: 'px',
+        format: [imgW, imgH]
+      });
+      pdf.addImage(dataUrl, 'PNG', 0, 0, imgW, imgH);
+      const pdfBlob = pdf.output('blob');
+      const pdfUrl = URL.createObjectURL(pdfBlob);
+
       openModal(`
         <div class="result-modal">
           <h3>Resumo gerado</h3>
-          <p class="hint">No celular, toque e segure a imagem para salvar. No computador, use o botão abaixo.</p>
+          <p class="hint">Toque no botão abaixo para baixar seu resumo em PDF.</p>
           <img src="${dataUrl}" alt="Resumo financeiro">
-          <a class="dl-link" id="dlLink" href="${dataUrl}" download="arloques-financeiro-resumo.png">Baixar imagem</a>
+          <a class="dl-link" id="dlLink" href="${pdfUrl}" download="arloques-financeiro-resumo.pdf">Baixar PDF</a>
         </div>
       `, (box)=>{
-        box.querySelector('.dl-link').addEventListener('click', ()=>{ showToast('Imagem baixada!'); });
+        box.querySelector('.dl-link').addEventListener('click', ()=>{ showToast('PDF baixado!'); });
       });
     }catch(err){
-      console.error('Erro ao gerar imagem:', err);
-      showToast('Não foi possível gerar a imagem: ' + (err && err.message ? err.message : 'erro desconhecido'));
+      console.error('Erro ao gerar PDF:', err);
+      showToast('Não foi possível gerar o PDF: ' + (err && err.message ? err.message : 'erro desconhecido'));
     }finally{
       btn.innerHTML = original;
       btn.disabled = false;
